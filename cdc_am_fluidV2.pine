@@ -1,5 +1,5 @@
 //@version=5
-indicator(title="Am EMA [Fixed]", shorttitle="AM EMA", overlay=true, max_labels_count = 500, max_boxes_count = 500, max_lines_count = 500, max_bars_back = 1000)
+indicator(title="CDC_am_fluidV2", shorttitle="AM cdc flv2", overlay=true, max_labels_count = 500, max_boxes_count = 500, max_lines_count = 500, max_bars_back = 1000)
 
 // === INPUTS ===
 emaSource = input.source(close, title='EMA Source', group='EMA')
