@@ -1,0 +1,290 @@
+//@version=5
+indicator(title="Am EMA [Fixed]", shorttitle="AM EMA", overlay=true, max_labels_count = 500, max_boxes_count = 500, max_lines_count = 500, max_bars_back = 1000)
+
+// === INPUTS ===
+emaSource = input.source(close, title='EMA Source', group='EMA')
+emaFastLength = input.int(50, title='EMA Fast Length', minval=1, group='EMA')
+emaSlowLength = input.int(200, title='EMA Slow Length', minval=1, group='EMA')
+emaFastColor = input.color(color.orange, title='EMA Fast Color', group='EMA')
+emaSlowColor = input.color(color.blue, title='EMA Slow Color', group='EMA')
+emaFastTransparency = input.int(50, title='EMA Fast Transparency', minval=0, maxval=100, group='EMA')
+emaSlowTransparency = input.int(50, title='EMA Slow Transparency', minval=0, maxval=100, group='EMA')
+
+emaFast = ta.ema(emaSource, emaFastLength)
+emaSlow = ta.ema(emaSource, emaSlowLength)
+
+trendDown = close < emaFast and close < emaSlow
+trendWatch = close > emaFast and close < emaSlow
+trendUp = close > emaFast and close > emaSlow
+trendBeSell = close > emaSlow and close < emaFast
+
+trendColor = trendDown ? color.red : trendWatch ? color.yellow : trendUp ? color.lime : trendBeSell ? color.orange : color.gray
+trendLabelText = trendDown ? '🔻 DOWN' : trendWatch ? '🟡 WATCH' : trendUp ? '🟢 UP' : trendBeSell ? '🟠 BE SELL' : '⚪ NEUTRAL'
+trendTooltip = 'EMA Trend\n- 🔻 DOWN: Price < EMA Fast and EMA Slow\n- 🟡 WATCH: Price > EMA Fast but < EMA Slow\n- 🟢 UP: Price > EMA Fast and EMA Slow\n- 🟠 BE SELL: Price > EMA Slow but < EMA Fast'
+
+emaFastPlot = plot(emaFast, color = color.new(emaFastColor, emaFastTransparency), style=plot.style_line, linewidth=2, title='EMA Fast')
+emaSlowPlot = plot(emaSlow, color = color.new(emaSlowColor, emaSlowTransparency), style=plot.style_line, linewidth=4, title='EMA Slow')
+fill(emaFastPlot, emaSlowPlot, color = color.new(trendColor, 85), title='EMA Trend Fill')
+
+var label emaFastLineLabel = na
+var label emaSlowLineLabel = na
+
+if barstate.islast
+    if na(emaFastLineLabel)
+        emaFastLineLabel := label.new(bar_index + 1, emaFast, '', xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_left, textcolor = color.white, color = emaFastColor, size = size.small)
+    else
+        label.set_xy(emaFastLineLabel, bar_index + 1, emaFast)
+    label.set_text(emaFastLineLabel, 'EMA ' + str.tostring(emaFastLength))
+    label.set_color(emaFastLineLabel, emaFastColor)
+
+    if na(emaSlowLineLabel)
+        emaSlowLineLabel := label.new(bar_index + 1, emaSlow, '', xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_left, textcolor = color.white, color = emaSlowColor, size = size.small)
+    else
+        label.set_xy(emaSlowLineLabel, bar_index + 1, emaSlow)
+    label.set_text(emaSlowLineLabel, 'EMA ' + str.tostring(emaSlowLength))
+    label.set_color(emaSlowLineLabel, emaSlowColor)
+
+// --- FLUID TRAD (FIXED SECTION) ---
+swing_length = input.int(30, title = 'Swing High/Low Length', group = 'Settings', minval = 1)
+history_of_demand_to_keep = input.int(50, title = 'History To Keep', minval = 5)
+box_width = input.float(3, title = 'Supply/Demand Box Width', minval = 1, step = 0.5)
+
+show_price_action_labels = input.bool(false, title = 'Show Price Action Labels')
+
+supply_color = input.color(color.new(color.red,60), title = 'แนวต้าน')
+demand_color = input.color(color.new(#ACF6B3,60), title = 'Demand')
+poi_label_color = input.color(#c19a9a, title = 'POI Label')
+bos_label_color = input.color(#d8b6b6, title = 'BOS Label')
+swing_type_color = input.color(color.black, title = 'Price Action Label')
+
+// Array Add/Pop
+f_array_add_pop(items, newValue) =>
+    array.unshift(items, newValue)
+    array.pop(items)
+
+// Swing Labels (Modified for time)
+f_sh_sl_labels(values, swing_type) =>
+    var string label_text = na
+    if swing_type == 1
+        label_text := array.get(values, 0) >= array.get(values, 1) ? 'HH' : 'LH'
+        label.new(time[swing_length], array.get(values,0), text = label_text, style=label.style_label_down, textcolor = swing_type_color, color = color.new(swing_type_color, 100), size = size.tiny, xloc = xloc.bar_time)
+    else if swing_type == -1
+        label_text := array.get(values, 0) >= array.get(values, 1) ? 'HL' : 'LL'
+        label.new(time[swing_length], array.get(values,0), text = label_text, style=label.style_label_up, textcolor = swing_type_color, color = color.new(swing_type_color, 100), size = size.tiny, xloc = xloc.bar_time)
+
+f_project_time(multiplier) =>
+    time + (time - time[1]) * multiplier
+
+f_format_percent(value) =>
+    na(value) ? '-' : str.format('{0}{1}%', value > 0 ? '+' : '', str.tostring(value, '#.##'))
+
+f_format_compact_number(value) =>
+    if na(value)
+        '-'
+    else if math.abs(value) >= 1000000000000
+        str.tostring(value / 1000000000000, '#.##') + 'T'
+    else if math.abs(value) >= 1000000000
+        str.tostring(value / 1000000000, '#.##') + 'B'
+    else if math.abs(value) >= 1000000
+        str.tostring(value / 1000000, '#.##') + 'M'
+    else if math.abs(value) >= 1000
+        str.tostring(value / 1000, '#.##') + 'K'
+    else
+        str.tostring(value, '#.##')
+
+f_get_industry_text() =>
+    syminfo.type == 'stock' and str.length(syminfo.industry) > 0 ? syminfo.industry : ''
+
+f_add_line(baseText, shouldAdd, lineText) =>
+    shouldAdd ? baseText + lineText + '\n' : baseText
+
+f_bool_to_int(condition) =>
+    condition ? 1 : 0
+
+f_check_overlapping(new_poi, box_array, atr) =>
+    atr_threshold = atr * 2
+    okay_to_draw = true
+    if array.size(box_array) > 0
+        for i = 0 to array.size(box_array) - 1
+            box_obj = array.get(box_array, i)
+            if not na(box_obj)
+                top = box.get_top(box_obj)
+                bottom = box.get_bottom(box_obj)
+                poi = (top + bottom) / 2
+                if new_poi >= poi - atr_threshold and new_poi <= poi + atr_threshold
+                    okay_to_draw := false
+                    break
+    okay_to_draw
+
+// Supply/Demand Drawing (FIXED: Use xloc.bar_time)
+f_supply_demand(value_array, time_array, box_array, label_array, box_type, atr) =>
+    atr_buffer = atr * (box_width / 10)
+    box_left = array.get(time_array, 0)
+    box_right = f_project_time(100)
+
+    float box_top = box_type == 1 ? array.get(value_array, 0) : array.get(value_array, 0) + atr_buffer
+    float box_bottom = box_type == 1 ? box_top - atr_buffer : array.get(value_array, 0)
+    float poi = (box_top + box_bottom) / 2
+    zone_text = box_type == 1 ? 'แนวต้าน' : 'แนวรับ'
+    zone_color = box_type == 1 ? supply_color : demand_color
+    poi_box_color = color.new(poi_label_color, 90)
+
+    if f_check_overlapping(poi, box_array, atr)
+        box.delete(array.get(box_array, array.size(box_array) - 1))
+        f_array_add_pop(box_array, box.new(left = box_left, top = box_top, right = box_right, bottom = box_bottom, border_color = zone_color, bgcolor = zone_color, extend = extend.none, text = zone_text, text_halign = text.align_center, text_valign = text.align_center, text_color = poi_label_color, text_size = size.small, xloc = xloc.bar_time))
+
+        box.delete(array.get(label_array, array.size(label_array) - 1))
+        f_array_add_pop(label_array, box.new(left = box_left, top = poi, right = box_right, bottom = poi, border_color = poi_box_color, bgcolor = poi_box_color, extend = extend.none, text = ' ', text_halign = text.align_left, text_valign = text.align_center, text_color = poi_label_color, text_size = size.small, xloc = xloc.bar_time))
+
+// SD to BOS (FIXED: Use xloc.bar_time logic)
+f_sd_to_bos(box_array, bos_array, label_array, zone_type) =>
+    if array.size(box_array) > 0
+        for i = 0 to array.size(box_array) - 1
+            box_obj = array.get(box_array, i)
+            if not na(box_obj)
+                level_to_break = zone_type == 1 ? box.get_top(box_obj) : box.get_bottom(box_obj)
+                if (zone_type == 1 and close >= level_to_break) or (zone_type == -1 and close <= level_to_break)
+                    copied_box = box.copy(box_obj)
+                    f_array_add_pop(bos_array, copied_box)
+                    mid = (box.get_top(box_obj) + box.get_bottom(box_obj)) / 2
+                    box.set_top(copied_box, mid)
+                    box.set_bottom(copied_box, mid)
+                    box.set_right(copied_box, time)
+                    box.set_text(copied_box, ' ')
+                    box.set_text_color(copied_box, bos_label_color)
+                    box.delete(box_obj)
+                    box.delete(array.get(label_array, i))
+
+f_extend_box_endpoint(box_array) =>
+    if array.size(box_array) > 0
+        for i = 0 to array.size(box_array) - 1
+            box_obj = array.get(box_array, i)
+            if not na(box_obj)
+                box.set_right(box_obj, f_project_time(100))
+
+// --- CALCULATIONS ---
+atr = ta.atr(50)
+swing_high = ta.pivothigh(high, swing_length, swing_length)
+swing_low = ta.pivotlow(low, swing_length, swing_length)
+latestGrowthPercent = not na(close[1]) and close[1] != 0 ? ((close - close[1]) / close[1]) * 100 : na
+sharesOutstanding = request.financial(syminfo.tickerid, 'TOTAL_SHARES_OUTSTANDING', 'FQ', ignore_invalid_symbol = true)
+marketCap = not na(sharesOutstanding) ? sharesOutstanding * close : na
+industryText = f_get_industry_text()
+showIndustryRow = str.length(industryText) > 0
+
+dailyClose = request.security(syminfo.tickerid, 'D', close)
+dailySma50 = request.security(syminfo.tickerid, 'D', ta.sma(close, 50))
+dailySma150 = request.security(syminfo.tickerid, 'D', ta.sma(close, 150))
+dailySma200 = request.security(syminfo.tickerid, 'D', ta.sma(close, 200))
+dailySma200MonthAgo = request.security(syminfo.tickerid, 'D', ta.sma(close, 200)[20])
+daily52WeekLow = request.security(syminfo.tickerid, 'D', ta.lowest(low, 252))
+daily52WeekHigh = request.security(syminfo.tickerid, 'D', ta.highest(high, 252))
+
+twp1Ready = not na(dailyClose) and not na(dailySma150)
+twp2Ready = not na(dailyClose) and not na(dailySma200)
+twp3Ready = not na(dailySma150) and not na(dailySma200)
+twp4Ready = not na(dailySma200) and not na(dailySma200MonthAgo)
+twp5Ready = not na(dailySma50) and not na(dailySma150)
+twp6Ready = not na(dailySma50) and not na(dailySma200)
+twp7Ready = not na(dailyClose) and not na(dailySma50)
+twp8Ready = not na(dailyClose) and not na(daily52WeekLow)
+twp9Ready = not na(dailyClose) and not na(daily52WeekHigh)
+
+twp1Pass = twp1Ready and dailyClose > dailySma150
+twp2Pass = twp2Ready and dailyClose > dailySma200
+twp3Pass = twp3Ready and dailySma150 > dailySma200
+twp4Pass = twp4Ready and dailySma200 > dailySma200MonthAgo
+twp5Pass = twp5Ready and dailySma50 > dailySma150
+twp6Pass = twp6Ready and dailySma50 > dailySma200
+twp7Pass = twp7Ready and dailyClose > dailySma50
+twp8Pass = twp8Ready and dailyClose >= daily52WeekLow * 1.25
+twp9Pass = twp9Ready and dailyClose >= daily52WeekHigh * 0.75
+
+twpGreenCount = f_bool_to_int(twp1Pass) + f_bool_to_int(twp2Pass) + f_bool_to_int(twp3Pass) + f_bool_to_int(twp4Pass) + f_bool_to_int(twp5Pass) + f_bool_to_int(twp6Pass) + f_bool_to_int(twp7Pass) + f_bool_to_int(twp8Pass) + f_bool_to_int(twp9Pass)
+
+twpRedCount = f_bool_to_int(twp1Ready and not twp1Pass) + f_bool_to_int(twp2Ready and not twp2Pass) + f_bool_to_int(twp3Ready and not twp3Pass) + f_bool_to_int(twp4Ready and not twp4Pass) + f_bool_to_int(twp5Ready and not twp5Pass) + f_bool_to_int(twp6Ready and not twp6Pass) + f_bool_to_int(twp7Ready and not twp7Pass) + f_bool_to_int(twp8Ready and not twp8Pass) + f_bool_to_int(twp9Ready and not twp9Pass)
+
+twpGreenDetails = ''
+twpGreenDetails := f_add_line(twpGreenDetails, twp1Pass, 'Price > 150-day MA')
+twpGreenDetails := f_add_line(twpGreenDetails, twp2Pass, 'Price > 200-day MA')
+twpGreenDetails := f_add_line(twpGreenDetails, twp3Pass, '150-day MA > 200-day MA')
+twpGreenDetails := f_add_line(twpGreenDetails, twp4Pass, '200-day MA trending up 1 month')
+twpGreenDetails := f_add_line(twpGreenDetails, twp5Pass, '50-day MA > 150-day MA')
+twpGreenDetails := f_add_line(twpGreenDetails, twp6Pass, '50-day MA > 200-day MA')
+twpGreenDetails := f_add_line(twpGreenDetails, twp7Pass, 'Price > 50-day MA')
+twpGreenDetails := f_add_line(twpGreenDetails, twp8Pass, 'Price >= 25% above 52-week low')
+twpGreenDetails := f_add_line(twpGreenDetails, twp9Pass, 'Price within 25% of 52-week high')
+
+twpRedDetails = ''
+twpRedDetails := f_add_line(twpRedDetails, twp1Ready and not twp1Pass, 'Price <= 150-day MA')
+twpRedDetails := f_add_line(twpRedDetails, twp2Ready and not twp2Pass, 'Price <= 200-day MA')
+twpRedDetails := f_add_line(twpRedDetails, twp3Ready and not twp3Pass, '150-day MA <= 200-day MA')
+twpRedDetails := f_add_line(twpRedDetails, twp4Ready and not twp4Pass, '200-day MA not trending up 1 month')
+twpRedDetails := f_add_line(twpRedDetails, twp5Ready and not twp5Pass, '50-day MA <= 150-day MA')
+twpRedDetails := f_add_line(twpRedDetails, twp6Ready and not twp6Pass, '50-day MA <= 200-day MA')
+twpRedDetails := f_add_line(twpRedDetails, twp7Ready and not twp7Pass, 'Price <= 50-day MA')
+twpRedDetails := f_add_line(twpRedDetails, twp8Ready and not twp8Pass, 'Price < 25% above 52-week low')
+twpRedDetails := f_add_line(twpRedDetails, twp9Ready and not twp9Pass, 'Price more than 25% below 52-week high')
+
+twpUnavailableDetails = ''
+twpUnavailableDetails := f_add_line(twpUnavailableDetails, not twp1Ready, 'Price > 150-day MA')
+twpUnavailableDetails := f_add_line(twpUnavailableDetails, not twp2Ready, 'Price > 200-day MA')
+twpUnavailableDetails := f_add_line(twpUnavailableDetails, not twp3Ready, '150-day MA > 200-day MA')
+twpUnavailableDetails := f_add_line(twpUnavailableDetails, not twp4Ready, '200-day MA trending up 1 month')
+twpUnavailableDetails := f_add_line(twpUnavailableDetails, not twp5Ready, '50-day MA > 150-day MA')
+twpUnavailableDetails := f_add_line(twpUnavailableDetails, not twp6Ready, '50-day MA > 200-day MA')
+twpUnavailableDetails := f_add_line(twpUnavailableDetails, not twp7Ready, 'Price > 50-day MA')
+twpUnavailableDetails := f_add_line(twpUnavailableDetails, not twp8Ready, 'Price >= 25% above 52-week low')
+twpUnavailableDetails := f_add_line(twpUnavailableDetails, not twp9Ready, 'Price within 25% of 52-week high')
+
+twpTooltip = '🟢 GREEN\n' + (str.length(twpGreenDetails) > 0 ? twpGreenDetails : '-\n') + '\n🔴 RED\n' + (str.length(twpRedDetails) > 0 ? twpRedDetails : '-\n') + (str.length(twpUnavailableDetails) > 0 ? '\nN/A\n' + twpUnavailableDetails : '')
+twpSummaryText = '🟢 ' + str.tostring(twpGreenCount) + ' | 🔴 ' + str.tostring(twpRedCount)
+
+var swing_high_values = array.new_float(5, 0.0)
+var swing_low_values = array.new_float(5, 0.0)
+var swing_high_times = array.new_int(5, 0)
+var swing_low_times = array.new_int(5, 0)
+
+var current_supply_box = array.new_box(history_of_demand_to_keep, na)
+var current_demand_box = array.new_box(history_of_demand_to_keep, na)
+var current_supply_poi = array.new_box(history_of_demand_to_keep, na)
+var current_demand_poi = array.new_box(history_of_demand_to_keep, na)
+
+var supply_bos = array.new_box(5, na)
+var demand_bos = array.new_box(5, na)
+
+if not na(swing_high)
+    f_array_add_pop(swing_high_values, swing_high)
+    f_array_add_pop(swing_high_times, time[swing_length])
+    if show_price_action_labels
+        f_sh_sl_labels(swing_high_values, 1)
+    f_supply_demand(swing_high_values, swing_high_times, current_supply_box, current_supply_poi, 1, atr)
+
+else if not na(swing_low)
+    f_array_add_pop(swing_low_values, swing_low)
+    f_array_add_pop(swing_low_times, time[swing_length])
+    if show_price_action_labels
+        f_sh_sl_labels(swing_low_values, -1)
+    f_supply_demand(swing_low_values, swing_low_times, current_demand_box, current_demand_poi, -1, atr)
+
+f_sd_to_bos(current_supply_box, supply_bos, current_supply_poi, 1)
+f_sd_to_bos(current_demand_box, demand_bos, current_demand_poi, -1)
+f_extend_box_endpoint(current_supply_box)
+f_extend_box_endpoint(current_demand_box)
+
+// --- SUMMARY TABLE ---
+var table summaryTable = table.new(position.top_right, 2, 6, bgcolor = color.new(color.black, 15), border_width = 1, border_color = color.new(color.white, 80))
+
+if barstate.islast
+    table.cell(summaryTable, 0, 0, '', text_color = color.new(color.white, 100), text_size = size.tiny, bgcolor = color.new(color.black, 100))
+    table.cell(summaryTable, 1, 0, '', text_color = color.new(color.white, 100), text_size = size.tiny, bgcolor = color.new(color.black, 100))
+    table.cell(summaryTable, 0, 1, 'GROWTH %', text_color = color.white, text_size = size.small, bgcolor = color.new(color.green, 75))
+    table.cell(summaryTable, 1, 1, 'MC', text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 75))
+    table.cell(summaryTable, 0, 2, f_format_percent(latestGrowthPercent), text_color = color.white, text_size = size.large, bgcolor = color.new(color.green, 35))
+    table.cell(summaryTable, 1, 2, f_format_compact_number(marketCap), text_color = color.white, text_size = size.large, bgcolor = color.new(color.blue, 35))
+    table.cell(summaryTable, 0, 3, showIndustryRow ? 'INDUSTRY' : '', text_color = color.white, text_size = size.small, bgcolor = showIndustryRow ? color.new(color.gray, 75) : color.new(color.black, 100))
+    table.cell(summaryTable, 1, 3, showIndustryRow ? industryText : '', text_color = color.white, text_size = size.normal, bgcolor = showIndustryRow ? color.new(color.gray, 35) : color.new(color.black, 100))
+    table.cell(summaryTable, 0, 4, 'TWP', text_color = color.white, text_size = size.small, bgcolor = color.new(color.teal, 75), tooltip = twpTooltip)
+    table.cell(summaryTable, 1, 4, twpSummaryText, text_color = color.white, text_size = size.normal, bgcolor = color.new(color.teal, 35), tooltip = twpTooltip)
+    table.cell(summaryTable, 0, 5, 'TREND', text_color = color.white, text_size = size.small, bgcolor = color.new(trendColor, 70), tooltip = trendTooltip)
+    table.cell(summaryTable, 1, 5, trendLabelText, text_color = color.white, text_size = size.normal, bgcolor = color.new(trendColor, 40), tooltip = trendTooltip)
