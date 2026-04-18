@@ -13,14 +13,75 @@ emaSlowTransparency = input.int(50, title = 'EMA Slow Transparency', minval = 0,
 emaFast = ta.ema(emaSource, emaFastLength)
 emaSlow = ta.ema(emaSource, emaSlowLength)
 
-trendDown = close < emaFast and close < emaSlow
-trendWatch = close > emaFast and close < emaSlow
-trendUp = close > emaFast and close > emaSlow
-trendBeSell = close > emaSlow and close < emaFast
+dailyClose = request.security(syminfo.tickerid, 'D', close)
+dailySma50 = request.security(syminfo.tickerid, 'D', ta.sma(close, 50))
+dailySma150 = request.security(syminfo.tickerid, 'D', ta.sma(close, 150))
+dailySma200 = request.security(syminfo.tickerid, 'D', ta.sma(close, 200))
+dailySma200MonthAgo = request.security(syminfo.tickerid, 'D', ta.sma(close, 200)[20])
+daily52WeekLow = request.security(syminfo.tickerid, 'D', ta.lowest(low, 252))
+daily52WeekHigh = request.security(syminfo.tickerid, 'D', ta.highest(high, 252))
 
-trendColor = trendDown ? color.red : trendWatch ? color.yellow : trendUp ? color.lime : trendBeSell ? color.orange : color.gray
-trendLabelText = trendDown ? '🔻 DOWN' : trendWatch ? '🟡 WATCH' : trendUp ? '🟢 UP' : trendBeSell ? '🟠 BE SELL' : '⚪ NEUTRAL'
-trendTooltip = 'EMA Trend\n- 🔻 DOWN: Price < EMA Fast and EMA Slow\n- 🟡 WATCH: Price > EMA Fast but < EMA Slow\n- 🟢 UP: Price > EMA Fast and EMA Slow\n- 🟠 BE SELL: Price > EMA Slow but < EMA Fast'
+twp1Ready = not na(dailyClose) and not na(dailySma150)
+twp2Ready = not na(dailyClose) and not na(dailySma200)
+twp3Ready = not na(dailySma150) and not na(dailySma200)
+twp4Ready = not na(dailySma200) and not na(dailySma200MonthAgo)
+twp5Ready = not na(dailySma50) and not na(dailySma150)
+twp6Ready = not na(dailySma50) and not na(dailySma200)
+twp7Ready = not na(dailyClose) and not na(dailySma50)
+twp8Ready = not na(dailyClose) and not na(daily52WeekLow)
+twp9Ready = not na(dailyClose) and not na(daily52WeekHigh)
+
+twp1Pass = twp1Ready and dailyClose > dailySma150
+twp2Pass = twp2Ready and dailyClose > dailySma200
+twp3Pass = twp3Ready and dailySma150 > dailySma200
+twp4Pass = twp4Ready and dailySma200 > dailySma200MonthAgo
+twp5Pass = twp5Ready and dailySma50 > dailySma150
+twp6Pass = twp6Ready and dailySma50 > dailySma200
+twp7Pass = twp7Ready and dailyClose > dailySma50
+twp8Pass = twp8Ready and dailyClose >= daily52WeekLow * 1.25
+twp9Pass = twp9Ready and dailyClose >= daily52WeekHigh * 0.75
+
+twpGreenCount = (twp1Pass ? 1 : 0) + (twp2Pass ? 1 : 0) + (twp3Pass ? 1 : 0) + (twp4Pass ? 1 : 0) + (twp5Pass ? 1 : 0) + (twp6Pass ? 1 : 0) + (twp7Pass ? 1 : 0) + (twp8Pass ? 1 : 0) + (twp9Pass ? 1 : 0)
+twpRedCount = (twp1Ready and not twp1Pass ? 1 : 0) + (twp2Ready and not twp2Pass ? 1 : 0) + (twp3Ready and not twp3Pass ? 1 : 0) + (twp4Ready and not twp4Pass ? 1 : 0) + (twp5Ready and not twp5Pass ? 1 : 0) + (twp6Ready and not twp6Pass ? 1 : 0) + (twp7Ready and not twp7Pass ? 1 : 0) + (twp8Ready and not twp8Pass ? 1 : 0) + (twp9Ready and not twp9Pass ? 1 : 0)
+twpTotalCount = twpGreenCount + twpRedCount
+twpScorePercent = twpTotalCount > 0 ? (twpGreenCount / twpTotalCount) * 100 : 0
+
+// === Trend Logic Using EMA + Mark Score ===
+trendReady = not na(emaFast) and not na(emaSlow)
+emaFastAboveSlow = emaFast > emaSlow
+emaSlowAboveFast = emaSlow > emaFast
+
+priceAboveFast = close > emaFast
+priceAboveSlow = close > emaSlow
+priceBelowFast = close < emaFast
+priceBelowSlow = close < emaSlow
+avgVolume20 = ta.sma(volume, 20)
+volumeReady = not na(avgVolume20) and avgVolume20 > 0
+volumeBoost = volumeReady and volume > avgVolume20 * 1.2
+
+trendCompositeScore = 0
+trendCompositeScore += priceAboveFast ? 2 : -2
+trendCompositeScore += priceAboveSlow ? 3 : -3
+trendCompositeScore += emaFastAboveSlow ? 2 : emaSlowAboveFast ? -2 : 0
+trendCompositeScore += twpGreenCount >= 7 ? 3 : twpGreenCount >= 5 ? 1 : twpGreenCount <= 2 ? -3 : twpGreenCount <= 4 ? -1 : 0
+
+case1BuyStrong = trendReady and priceAboveFast and emaFastAboveSlow
+case2BuyRecovery = trendReady and priceAboveSlow and emaSlowAboveFast
+case3Pullback = trendReady and priceBelowFast and priceAboveSlow and emaFastAboveSlow
+case3WatchRecovery = trendReady and priceAboveFast and priceBelowSlow and emaSlowAboveFast
+case4BreakdownFromUp = trendReady and priceBelowFast and priceBelowSlow and emaFastAboveSlow
+case4Downtrend = trendReady and priceBelowFast and priceBelowSlow and emaSlowAboveFast
+caseWatchStrongUp = case3WatchRecovery and volumeBoost
+
+trendState = not trendReady ? na : case1BuyStrong ? 4 : case2BuyRecovery ? 3 : caseWatchStrongUp ? 2 : case3Pullback or case3WatchRecovery ? 1 : case4BreakdownFromUp or case4Downtrend ? -1 : 0
+
+trendColor = not trendReady ? color.new(color.gray, 45) : case1BuyStrong ? color.new(color.lime, 0) : case2BuyRecovery ? color.new(color.aqua, 0) : caseWatchStrongUp ? color.new(color.teal, 0) : case3Pullback ? color.new(color.green, 35) : case3WatchRecovery ? color.new(color.yellow, 5) : case4BreakdownFromUp ? color.new(color.orange, 10) : case4Downtrend ? color.new(color.red, 20) : color.new(color.gray, 25)
+
+trendLabelText = not trendReady ? '⚪ ประเมินไม่ได้' : case1BuyStrong ? 'ขึ้นแข็งแรง' : case2BuyRecovery ? 'กลับตัว' : caseWatchStrongUp ? 'เด่นน่าดู' : case3Pullback ? 'ย่อสะสม' : case3WatchRecovery ? 'เฝ้าดู' : case4BreakdownFromUp ? 'หลุดฐาน' : case4Downtrend ? 'หลีกเลี่ยง' : '⚪ กลาง/สะสม'
+
+trendOrderText = not trendReady ? '-' : case1BuyStrong ? 'ราคา > EMA50 > EMA200' : case2BuyRecovery ? 'ราคา > EMA200 > EMA50' : case3Pullback ? 'EMA50 > ราคา > EMA200' : case3WatchRecovery ? 'EMA200 > ราคา > EMA50' : case4BreakdownFromUp ? 'EMA50 > EMA200 > ราคา' : case4Downtrend ? 'EMA200 > EMA50 > ราคา' : 'โครงสร้างคาบเกี่ยว'
+
+trendTooltip = not trendReady ? 'การวิเคราะห์เทรนด์\n\nประเมินไม่ได้: ข้อมูลบนกราฟยังไม่พอสำหรับคำนวณ EMA50 และ EMA200 ให้ครบ' : 'การวิเคราะห์เทรนด์จากลำดับ ราคา / EMA50 / EMA200\n\nลำดับปัจจุบัน: ' + trendOrderText + '\nMark Score: ' + str.tostring(twpGreenCount) + '/' + str.tostring(twpTotalCount) + '\nคะแนนรวม: ' + str.tostring(trendCompositeScore) + '\nวอลุ่มเด่น: ' + (volumeBoost ? 'มี' : 'ไม่มี') + '\n\nขึ้นแข็งแรง\nราคา > EMA50 > EMA200\nโครงสร้างขึ้นดีที่สุด\n\nกลับตัว\nราคา > EMA200 > EMA50\nกลับจากขาลงมายืนเหนือ EMA200 ได้แล้ว เริ่มน่าซื้อ\n\nเฝ้าดู\nEMA200 > ราคา > EMA50\nเริ่มฟื้นตัว เหมาะกับ watchlist\n\nย่อสะสม\nEMA50 > ราคา > EMA200\nย่อในขาขึ้น ยังไม่เสียโครงสร้าง\n\nเด่นน่าดู\nเหมือนเฝ้าดู แต่มีวอลุ่มมากกว่าค่าเฉลี่ย 20 วัน\n\nหลุดฐาน\nEMA50 > EMA200 > ราคา\nหลุด EMA200 จากโครงสร้างขึ้น\n\nหลีกเลี่ยง\nEMA200 > EMA50 > ราคา\nขาลงชัดเจน'
 
 emaFastPlot = plot(emaFast, color = color.new(emaFastColor, emaFastTransparency), style = plot.style_line, linewidth = 2, title = 'EMA Fast')
 emaSlowPlot = plot(emaSlow, color = color.new(emaSlowColor, emaSlowTransparency), style = plot.style_line, linewidth = 4, title = 'EMA Slow')
@@ -93,6 +154,20 @@ f_format_compact_number(value) =>
         str.tostring(value / 1000, '#.##') + 'K'
     else
         str.tostring(value, '#.##')
+
+f_get_market_cap_size_text(value) =>
+    if na(value)
+        'ไม่มีข้อมูล'
+    else if value >= 200000000000
+        'Mega Cap'
+    else if value >= 10000000000
+        'Large Cap'
+    else if value >= 2000000000
+        'Mid Cap'
+    else if value >= 300000000
+        'Small Cap'
+    else
+        'Micro Cap'
 
 f_get_industry_text() =>
     syminfo.type == 'stock' and str.length(syminfo.industry) > 0 ? syminfo.industry : ''
@@ -171,40 +246,9 @@ swing_low = ta.pivotlow(low, swing_length, swing_length)
 latestGrowthPercent = not na(close[1]) and close[1] != 0 ? (close - close[1]) / close[1] * 100 : na
 sharesOutstanding = request.financial(syminfo.tickerid, 'TOTAL_SHARES_OUTSTANDING', 'FQ', ignore_invalid_symbol = true)
 marketCap = not na(sharesOutstanding) ? sharesOutstanding * close : na
+marketCapText = f_format_compact_number(marketCap) + ' / ' + f_get_market_cap_size_text(marketCap)
 industryText = f_get_industry_text()
 showIndustryRow = str.length(industryText) > 0
-
-dailyClose = request.security(syminfo.tickerid, 'D', close)
-dailySma50 = request.security(syminfo.tickerid, 'D', ta.sma(close, 50))
-dailySma150 = request.security(syminfo.tickerid, 'D', ta.sma(close, 150))
-dailySma200 = request.security(syminfo.tickerid, 'D', ta.sma(close, 200))
-dailySma200MonthAgo = request.security(syminfo.tickerid, 'D', ta.sma(close, 200)[20])
-daily52WeekLow = request.security(syminfo.tickerid, 'D', ta.lowest(low, 252))
-daily52WeekHigh = request.security(syminfo.tickerid, 'D', ta.highest(high, 252))
-
-twp1Ready = not na(dailyClose) and not na(dailySma150)
-twp2Ready = not na(dailyClose) and not na(dailySma200)
-twp3Ready = not na(dailySma150) and not na(dailySma200)
-twp4Ready = not na(dailySma200) and not na(dailySma200MonthAgo)
-twp5Ready = not na(dailySma50) and not na(dailySma150)
-twp6Ready = not na(dailySma50) and not na(dailySma200)
-twp7Ready = not na(dailyClose) and not na(dailySma50)
-twp8Ready = not na(dailyClose) and not na(daily52WeekLow)
-twp9Ready = not na(dailyClose) and not na(daily52WeekHigh)
-
-twp1Pass = twp1Ready and dailyClose > dailySma150
-twp2Pass = twp2Ready and dailyClose > dailySma200
-twp3Pass = twp3Ready and dailySma150 > dailySma200
-twp4Pass = twp4Ready and dailySma200 > dailySma200MonthAgo
-twp5Pass = twp5Ready and dailySma50 > dailySma150
-twp6Pass = twp6Ready and dailySma50 > dailySma200
-twp7Pass = twp7Ready and dailyClose > dailySma50
-twp8Pass = twp8Ready and dailyClose >= daily52WeekLow * 1.25
-twp9Pass = twp9Ready and dailyClose >= daily52WeekHigh * 0.75
-
-twpGreenCount = f_bool_to_int(twp1Pass) + f_bool_to_int(twp2Pass) + f_bool_to_int(twp3Pass) + f_bool_to_int(twp4Pass) + f_bool_to_int(twp5Pass) + f_bool_to_int(twp6Pass) + f_bool_to_int(twp7Pass) + f_bool_to_int(twp8Pass) + f_bool_to_int(twp9Pass)
-
-twpRedCount = f_bool_to_int(twp1Ready and not twp1Pass) + f_bool_to_int(twp2Ready and not twp2Pass) + f_bool_to_int(twp3Ready and not twp3Pass) + f_bool_to_int(twp4Ready and not twp4Pass) + f_bool_to_int(twp5Ready and not twp5Pass) + f_bool_to_int(twp6Ready and not twp6Pass) + f_bool_to_int(twp7Ready and not twp7Pass) + f_bool_to_int(twp8Ready and not twp8Pass) + f_bool_to_int(twp9Ready and not twp9Pass)
 
 twpGreenDetails = ''
 twpGreenDetails := f_add_line(twpGreenDetails, twp1Pass, 'Price > 150-day MA')
@@ -239,8 +283,22 @@ twpUnavailableDetails := f_add_line(twpUnavailableDetails, not twp7Ready, 'Price
 twpUnavailableDetails := f_add_line(twpUnavailableDetails, not twp8Ready, 'Price >= 25% above 52-week low')
 twpUnavailableDetails := f_add_line(twpUnavailableDetails, not twp9Ready, 'Price within 25% of 52-week high')
 
-twpTooltip = '🟢 GREEN\n' + (str.length(twpGreenDetails) > 0 ? twpGreenDetails : '-\n') + '\n🔴 RED\n' + (str.length(twpRedDetails) > 0 ? twpRedDetails : '-\n') + (str.length(twpUnavailableDetails) > 0 ? '\nN/A\n' + twpUnavailableDetails : '')
-twpSummaryText = '🟢 ' + str.tostring(twpGreenCount) + ' | 🔴 ' + str.tostring(twpRedCount)
+color twpScoreColor = color.new(color.maroon, 30)
+if twpScorePercent >= 80
+    twpScoreColor := color.new(color.lime, 20)
+else if twpScorePercent >= 67
+    twpScoreColor := color.new(color.green, 20)
+else if twpScorePercent >= 56
+    twpScoreColor := color.new(color.olive, 20)
+else if twpScorePercent >= 44
+    twpScoreColor := color.new(color.yellow, 20)
+else if twpScorePercent >= 33
+    twpScoreColor := color.new(color.orange, 20)
+else if twpScorePercent >= 20
+    twpScoreColor := color.new(color.red, 30)
+twpScoreText = str.tostring(twpGreenCount) + ' / ' + str.tostring(twpTotalCount)
+twpTooltip = 'Mark Score\n\nคะแนนที่ผ่าน: ' + str.tostring(twpGreenCount) + ' / ' + str.tostring(twpTotalCount) + '\nคิดเป็น: ' + str.tostring(twpScorePercent, '#.##') + '%\n\n🟢 เงื่อนไขที่ผ่าน (' + str.tostring(twpGreenCount) + ')\n' + (str.length(twpGreenDetails) > 0 ? twpGreenDetails : '-\n') + '\n🔴 เงื่อนไขที่ไม่ผ่าน (' + str.tostring(twpRedCount) + ')\n' + (str.length(twpRedDetails) > 0 ? twpRedDetails : '-\n') + (str.length(twpUnavailableDetails) > 0 ? '\n⚪ เงื่อนไขที่ยังไม่มีข้อมูล\n' + twpUnavailableDetails : '')
+twpSummaryText = twpScoreText
 
 var swing_high_values = array.new_float(5, 0.0)
 var swing_low_values = array.new_float(5, 0.0)
@@ -280,13 +338,14 @@ var table summaryTable = table.new(position.top_right, 2, 6, bgcolor = color.new
 if barstate.islast
     table.cell(summaryTable, 0, 0, '', text_color = color.new(color.white, 100), text_size = size.tiny, bgcolor = color.new(color.black, 100))
     table.cell(summaryTable, 1, 0, '', text_color = color.new(color.white, 100), text_size = size.tiny, bgcolor = color.new(color.black, 100))
-    table.cell(summaryTable, 0, 1, 'GROWTH %', text_color = color.white, text_size = size.small, bgcolor = color.new(color.green, 75))
-    table.cell(summaryTable, 1, 1, 'MC', text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 75))
-    table.cell(summaryTable, 0, 2, f_format_percent(latestGrowthPercent), text_color = color.white, text_size = size.large, bgcolor = color.new(color.green, 35))
-    table.cell(summaryTable, 1, 2, f_format_compact_number(marketCap), text_color = color.white, text_size = size.large, bgcolor = color.new(color.blue, 35))
-    table.cell(summaryTable, 0, 3, showIndustryRow ? 'INDUSTRY' : '', text_color = color.white, text_size = size.small, bgcolor = showIndustryRow ? color.new(color.gray, 75) : color.new(color.black, 100))
+    table.cell(summaryTable, 0, 1, '1Day %', text_color = color.white, text_size = size.small, bgcolor = color.new(color.gray, 75))
+    table.cell(summaryTable, 1, 1, 'ขนาด', text_color = color.white, text_size = size.small, bgcolor = color.new(color.blue, 75))
+    growthBgColor = latestGrowthPercent >= 0 ? color.new(color.green, 35) : color.new(color.red, 35)
+    table.cell(summaryTable, 0, 2, f_format_percent(latestGrowthPercent), text_color = color.white, text_size = size.large, bgcolor = growthBgColor)
+    table.cell(summaryTable, 1, 2, marketCapText, text_color = color.white, text_size = size.normal, bgcolor = color.new(color.blue, 35))
+    table.cell(summaryTable, 0, 3, showIndustryRow ? 'เกี่ยวกับ' : '', text_color = color.white, text_size = size.small, bgcolor = showIndustryRow ? color.new(color.gray, 75) : color.new(color.black, 100))
     table.cell(summaryTable, 1, 3, showIndustryRow ? industryText : '', text_color = color.white, text_size = size.normal, bgcolor = showIndustryRow ? color.new(color.gray, 35) : color.new(color.black, 100))
-    table.cell(summaryTable, 0, 4, 'TWP', text_color = color.white, text_size = size.small, bgcolor = color.new(color.teal, 75), tooltip = twpTooltip)
-    table.cell(summaryTable, 1, 4, twpSummaryText, text_color = color.white, text_size = size.normal, bgcolor = color.new(color.teal, 35), tooltip = twpTooltip)
-    table.cell(summaryTable, 0, 5, 'TREND', text_color = color.white, text_size = size.small, bgcolor = color.new(trendColor, 70), tooltip = trendTooltip)
+    table.cell(summaryTable, 0, 4, 'MARK SCORE', text_color = color.white, text_size = size.small, bgcolor = color.new(color.teal, 75), tooltip = twpTooltip)
+    table.cell(summaryTable, 1, 4, twpSummaryText, text_color = color.white, text_size = size.normal, bgcolor = twpScoreColor, tooltip = twpTooltip)
+    table.cell(summaryTable, 0, 5, 'เทรนด์', text_color = color.white, text_size = size.small, bgcolor = color.new(trendColor, 70), tooltip = trendTooltip)
     table.cell(summaryTable, 1, 5, trendLabelText, text_color = color.white, text_size = size.normal, bgcolor = color.new(trendColor, 40), tooltip = trendTooltip)
