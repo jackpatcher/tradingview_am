@@ -83,8 +83,8 @@ trendOrderText = not trendReady ? '-' : case1BuyStrong ? 'ราคา > EMA50 >
 
 trendTooltip = not trendReady ? 'การวิเคราะห์เทรนด์\n\nประเมินไม่ได้: ข้อมูลบนกราฟยังไม่พอสำหรับคำนวณ EMA50 และ EMA200 ให้ครบ' : 'การวิเคราะห์เทรนด์จากลำดับ ราคา / EMA50 / EMA200\n\nลำดับปัจจุบัน: ' + trendOrderText + '\nMark Score: ' + str.tostring(twpGreenCount) + '/' + str.tostring(twpTotalCount) + '\nคะแนนรวม: ' + str.tostring(trendCompositeScore) + '\nวอลุ่มเด่น: ' + (volumeBoost ? 'มี' : 'ไม่มี') + '\n\nขึ้นแข็งแรง\nราคา > EMA50 > EMA200\nโครงสร้างขึ้นดีที่สุด\n\nกลับตัว\nราคา > EMA200 > EMA50\nกลับจากขาลงมายืนเหนือ EMA200 ได้แล้ว เริ่มน่าซื้อ\n\nเฝ้าดู\nEMA200 > ราคา > EMA50\nเริ่มฟื้นตัว เหมาะกับ watchlist\n\nหลุด EMA50 (ขาย)\nEMA50 > ราคา > EMA200\nราคาเสีย EMA50 แล้ว ควรขายหรืออย่างน้อยลดพอร์ต\n\nน่าติดตาม\nเหมือนเฝ้าดู แต่มีวอลุ่มมากกว่าค่าเฉลี่ย 20 วัน\n\nหลุดฐาน\nEMA50 > EMA200 > ราคา\nหลุด EMA200 จากโครงสร้างขึ้น\n\nหลีกเลี่ยง\nEMA200 > EMA50 > ราคา\nขาลงชัดเจน'
 
-emaFastPlot = plot(emaFast, color = color.new(emaFastColor, emaFastTransparency), style = plot.style_line, linewidth = 2, title = 'EMA Fast')
-emaSlowPlot = plot(emaSlow, color = color.new(emaSlowColor, emaSlowTransparency), style = plot.style_line, linewidth = 4, title = 'EMA Slow')
+emaFastPlot = plot(emaFast, color = color.new(emaFastColor, emaFastTransparency), style = plot.style_line, linewidth = 1, title = 'EMA Fast')
+emaSlowPlot = plot(emaSlow, color = color.new(emaSlowColor, emaSlowTransparency), style = plot.style_line, linewidth = 2, title = 'EMA Slow')
 fill(emaFastPlot, emaSlowPlot, color = color.new(trendColor, 85), title = 'EMA Trend Fill')
 
 var label emaFastLineLabel = na
