@@ -47,14 +47,22 @@ plot(showSMA ? rsiSMA : na, title="RSI SMA", color=color.orange, linewidth=1)
 var bool awaitingFirstCross = false
 if ta.crossover(rsi, osLevel)
     awaitingFirstCross := true
-// if RSI re-enters below osLevel, reset waiting flag
+// if RSI re-enters below osLevel, reset waiting flag and remove previous horizontal line
+var line greenHLine = na
 if ta.crossunder(rsi, osLevel)
     awaitingFirstCross := false
+    if not na(greenHLine)
+        line.delete(greenHLine)
+        greenHLine := na
 
 rsiCrossUpOverSMA = ta.crossover(rsi, rsiSMA)
 showGreenDot = awaitingFirstCross and rsiCrossUpOverSMA and rsi < 50
 if showGreenDot
     awaitingFirstCross := false
+    if not na(greenHLine)
+        line.delete(greenHLine)
+    // create a vertical line at the current bar (from 0 to 100) and extend to the right
+    greenHLine := line.new(bar_index, 0, bar_index, 100, xloc.bar_index, extend.right, color.new(color.green, 60), line.style_solid, 2)
 
 greenColor = color.new(color.green, 60)
 plotshape(showGreenDot ? rsi : na, title="Green dot (first RSI>SMA after <os)", style=shape.circle, location=location.absolute, color=greenColor, size=size.small)
