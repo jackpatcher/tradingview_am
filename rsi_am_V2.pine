@@ -41,3 +41,20 @@ showSMA = input.bool(true, title="Show RSI SMA")
 
 rsiSMA = ta.sma(rsi, smaLength)
 plot(showSMA ? rsiSMA : na, title="RSI SMA", color=color.orange, linewidth=1)
+// === RSI Cross-up dot: only show FIRST cross after RSI exits < osLevel ===
+// set a flag when RSI crosses up out of oversold (osLevel). The first time RSI then
+// crosses above its SMA while still <50, plot a single green dot and clear the flag.
+var bool awaitingFirstCross = false
+if ta.crossover(rsi, osLevel)
+    awaitingFirstCross := true
+// if RSI re-enters below osLevel, reset waiting flag
+if ta.crossunder(rsi, osLevel)
+    awaitingFirstCross := false
+
+rsiCrossUpOverSMA = ta.crossover(rsi, rsiSMA)
+showGreenDot = awaitingFirstCross and rsiCrossUpOverSMA and rsi < 50
+if showGreenDot
+    awaitingFirstCross := false
+
+greenColor = color.new(color.green, 60)
+plotshape(showGreenDot ? rsi : na, title="Green dot (first RSI>SMA after <os)", style=shape.circle, location=location.absolute, color=greenColor, size=size.small)
