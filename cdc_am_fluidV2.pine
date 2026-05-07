@@ -1,17 +1,25 @@
 //@version=6
-indicator(title = 'CDC_am_fluidV2', shorttitle = 'AM cdc flv2', overlay = true, max_labels_count = 500, max_boxes_count = 500, max_lines_count = 500, max_bars_back = 1000)
+indicator(title = 'CDC_am_ema', shorttitle = 'cdc am ema', overlay = true, max_labels_count = 500, max_boxes_count = 500, max_lines_count = 500, max_bars_back = 1000)
 
 // === INPUTS ===
-emaSource = input.source(close, title = 'EMA Source', group = 'EMA')
-emaFastLength = input.int(50, title = 'EMA Fast Length', minval = 1, group = 'EMA')
-emaSlowLength = input.int(200, title = 'EMA Slow Length', minval = 1, group = 'EMA')
-emaFastColor = input.color(color.orange, title = 'EMA Fast Color', group = 'EMA')
-emaSlowColor = input.color(color.blue, title = 'EMA Slow Color', group = 'EMA')
-emaFastTransparency = input.int(50, title = 'EMA Fast Transparency', minval = 0, maxval = 100, group = 'EMA')
-emaSlowTransparency = input.int(50, title = 'EMA Slow Transparency', minval = 0, maxval = 100, group = 'EMA')
+// ชุด EMA สลับอัตโนมัติตาม timeframe: Day → ชุด 1 (50,200), Week → ชุด 2 (7,15,30)
+emaSource = input.source(close, title = 'แหล่งข้อมูล EMA', group = 'EMA')
 
-emaFast = ta.ema(emaSource, emaFastLength)
-emaSlow = ta.ema(emaSource, emaSlowLength)
+// ตั้งค่าสีแบบ compact (เปลี่ยนได้แน่นอนจากแท็บ ข้อมูล)
+emaFastColor = input.color(color.new(color.lime, 35), title = 'สีเส้นเร็ว', group = 'EMA')
+emaMidColor = input.color(color.new(color.fuchsia, 35), title = 'สีเส้นกลาง (W)', group = 'EMA')
+emaSlowColor = input.color(color.new(color.aqua, 35), title = 'สีเส้นช้า', group = 'EMA')
+
+// อัตโนมัติ: Week = ชุด 2, อื่นๆ = ชุด 1
+useSet1 = not timeframe.isweekly
+emaFastLength = useSet1 ? 50 : 7
+emaMidLength = 15
+emaSlowLength = useSet1 ? 200 : 30
+
+// ชุด 1 = Daily, ชุด 2 = Weekly
+emaFast = useSet1 ? request.security(syminfo.tickerid, 'D', ta.ema(emaSource, 50)) : request.security(syminfo.tickerid, 'W', ta.ema(emaSource, 7))
+emaMid = request.security(syminfo.tickerid, 'W', ta.ema(emaSource, 15))
+emaSlow = useSet1 ? request.security(syminfo.tickerid, 'D', ta.ema(emaSource, 200)) : request.security(syminfo.tickerid, 'W', ta.ema(emaSource, 30))
 
 dailyClose = request.security(syminfo.tickerid, 'D', close)
 dailySma50 = request.security(syminfo.tickerid, 'D', ta.sma(close, 50))
@@ -77,17 +85,22 @@ trendState = not trendReady ? na : case1BuyStrong ? 4 : case2BuyRecovery ? 3 : c
 
 trendColor = not trendReady ? color.new(color.gray, 45) : case1BuyStrong ? color.new(color.lime, 0) : case2BuyRecovery ? color.new(color.aqua, 0) : caseWatchStrongUp ? color.new(color.teal, 0) : case3BreakEma50 ? color.new(color.orange, 10) : case3WatchRecovery ? color.new(color.yellow, 5) : case4BreakdownFromUp ? color.new(color.orange, 10) : case4Downtrend ? color.new(color.red, 20) : color.new(color.gray, 25)
 
-trendLabelText = not trendReady ? '⚪ ประเมินไม่ได้' : case1BuyStrong ? 'ขึ้นแข็งแรง' : case2BuyRecovery ? 'กลับตัว' : caseWatchStrongUp ? 'น่าติดตาม' : case3BreakEma50 ? 'หลุด EMA50 (ขาย)' : case3WatchRecovery ? 'เฝ้าดู' : case4BreakdownFromUp ? 'หลุดฐาน' : case4Downtrend ? 'หลีกเลี่ยง' : '⚪ กลาง/สะสม'
+emaFN = 'EMA' + str.tostring(emaFastLength)
+emaSN = 'EMA' + str.tostring(emaSlowLength)
 
-trendOrderText = not trendReady ? '-' : case1BuyStrong ? 'ราคา > EMA50 > EMA200' : case2BuyRecovery ? 'ราคา > EMA200 > EMA50' : case3BreakEma50 ? 'EMA50 > ราคา > EMA200' : case3WatchRecovery ? 'EMA200 > ราคา > EMA50' : case4BreakdownFromUp ? 'EMA50 > EMA200 > ราคา' : case4Downtrend ? 'EMA200 > EMA50 > ราคา' : 'โครงสร้างคาบเกี่ยว'
+trendLabelText = not trendReady ? '⚪ ประเมินไม่ได้' : case1BuyStrong ? 'ขึ้นแข็งแรง' : case2BuyRecovery ? 'กลับตัว' : caseWatchStrongUp ? 'น่าติดตาม' : case3BreakEma50 ? 'หลุด ' + emaFN + ' (ขาย)' : case3WatchRecovery ? 'เฝ้าดู' : case4BreakdownFromUp ? 'หลุดฐาน' : case4Downtrend ? 'หลีกเลี่ยง' : '⚪ กลาง/สะสม'
 
-trendTooltip = not trendReady ? 'การวิเคราะห์เทรนด์\n\nประเมินไม่ได้: ข้อมูลบนกราฟยังไม่พอสำหรับคำนวณ EMA50 และ EMA200 ให้ครบ' : 'การวิเคราะห์เทรนด์จากลำดับ ราคา / EMA50 / EMA200\n\nลำดับปัจจุบัน: ' + trendOrderText + '\nMark Score: ' + str.tostring(twpGreenCount) + '/' + str.tostring(twpTotalCount) + '\nคะแนนรวม: ' + str.tostring(trendCompositeScore) + '\nวอลุ่มเด่น: ' + (volumeBoost ? 'มี' : 'ไม่มี') + '\n\nขึ้นแข็งแรง\nราคา > EMA50 > EMA200\nโครงสร้างขึ้นดีที่สุด\n\nกลับตัว\nราคา > EMA200 > EMA50\nกลับจากขาลงมายืนเหนือ EMA200 ได้แล้ว เริ่มน่าซื้อ\n\nเฝ้าดู\nEMA200 > ราคา > EMA50\nเริ่มฟื้นตัว เหมาะกับ watchlist\n\nหลุด EMA50 (ขาย)\nEMA50 > ราคา > EMA200\nราคาเสีย EMA50 แล้ว ควรขายหรืออย่างน้อยลดพอร์ต\n\nน่าติดตาม\nเหมือนเฝ้าดู แต่มีวอลุ่มมากกว่าค่าเฉลี่ย 20 วัน\n\nหลุดฐาน\nEMA50 > EMA200 > ราคา\nหลุด EMA200 จากโครงสร้างขึ้น\n\nหลีกเลี่ยง\nEMA200 > EMA50 > ราคา\nขาลงชัดเจน'
+trendOrderText = not trendReady ? '-' : case1BuyStrong ? 'ราคา > ' + emaFN + ' > ' + emaSN : case2BuyRecovery ? 'ราคา > ' + emaSN + ' > ' + emaFN : case3BreakEma50 ? emaFN + ' > ราคา > ' + emaSN : case3WatchRecovery ? emaSN + ' > ราคา > ' + emaFN : case4BreakdownFromUp ? emaFN + ' > ' + emaSN + ' > ราคา' : case4Downtrend ? emaSN + ' > ' + emaFN + ' > ราคา' : 'โครงสร้างคาบเกี่ยว'
 
-emaFastPlot = plot(emaFast, color = color.new(emaFastColor, emaFastTransparency), style = plot.style_line, linewidth = 1, title = 'EMA Fast')
-emaSlowPlot = plot(emaSlow, color = color.new(emaSlowColor, emaSlowTransparency), style = plot.style_line, linewidth = 2, title = 'EMA Slow')
+trendTooltip = not trendReady ? 'การวิเคราะห์เทรนด์\n\nประเมินไม่ได้: ข้อมูลบนกราฟยังไม่พอสำหรับคำนวณ ' + emaFN + ' และ ' + emaSN + ' ให้ครบ' : 'การวิเคราะห์เทรนด์จากลำดับ ราคา / ' + emaFN + ' / ' + emaSN + '\n\nลำดับปัจจุบัน: ' + trendOrderText + '\nMark Score: ' + str.tostring(twpGreenCount) + '/' + str.tostring(twpTotalCount) + '\nคะแนนรวม: ' + str.tostring(trendCompositeScore) + '\nวอลุ่มเด่น: ' + (volumeBoost ? 'มี' : 'ไม่มี') + '\n\nขึ้นแข็งแรง\nราคา > ' + emaFN + ' > ' + emaSN + '\nโครงสร้างขึ้นดีที่สุด\n\nกลับตัว\nราคา > ' + emaSN + ' > ' + emaFN + '\nกลับจากขาลงมายืนเหนือ ' + emaSN + ' ได้แล้ว เริ่มน่าซื้อ\n\nเฝ้าดู\n' + emaSN + ' > ราคา > ' + emaFN + '\nเริ่มฟื้นตัว เหมาะกับ watchlist\n\nหลุด ' + emaFN + ' (ขาย)\n' + emaFN + ' > ราคา > ' + emaSN + '\nราคาเสีย ' + emaFN + ' แล้ว ควรขายหรืออย่างน้อยลดพอร์ต\n\nน่าติดตาม\nเหมือนเฝ้าดู แต่มีวอลุ่มมากกว่าค่าเฉลี่ย 20 วัน\n\nหลุดฐาน\n' + emaFN + ' > ' + emaSN + ' > ราคา\nหลุด ' + emaSN + ' จากโครงสร้างขึ้น\n\nหลีกเลี่ยง\n' + emaSN + ' > ' + emaFN + ' > ราคา\nขาลงชัดเจน'
+
+emaFastPlot = plot(emaFast, color = emaFastColor, style = plot.style_line, linewidth = 1, title = 'EMA เร็ว (Auto D/W)')
+emaMidPlot = plot(useSet1 ? na : emaMid, color = emaMidColor, style = plot.style_line, linewidth = 1, title = 'EMA กลาง (W เท่านั้น)')
+emaSlowPlot = plot(emaSlow, color = emaSlowColor, style = plot.style_line, linewidth = 2, title = 'EMA ช้า (Auto D/W)')
 fill(emaFastPlot, emaSlowPlot, color = color.new(trendColor, 85), title = 'EMA Trend Fill')
 
 var label emaFastLineLabel = na
+var label emaMidLineLabel = na
 var label emaSlowLineLabel = na
 
 if barstate.islast
@@ -96,15 +109,27 @@ if barstate.islast
         emaFastLineLabel
     else
         label.set_xy(emaFastLineLabel, bar_index + 1, emaFast)
-    label.set_text(emaFastLineLabel, 'EMA ' + str.tostring(emaFastLength))
+    label.set_text(emaFastLineLabel, 'เร็ว EMA ' + str.tostring(emaFastLength))
     label.set_color(emaFastLineLabel, emaFastColor)
+
+    if not useSet1
+        if na(emaMidLineLabel)
+            emaMidLineLabel := label.new(bar_index + 1, emaMid, '', xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_left, textcolor = color.white, color = emaMidColor, size = size.small)
+            emaMidLineLabel
+        else
+            label.set_xy(emaMidLineLabel, bar_index + 1, emaMid)
+        label.set_text(emaMidLineLabel, 'กลาง EMA ' + str.tostring(emaMidLength))
+        label.set_color(emaMidLineLabel, emaMidColor)
+    else if not na(emaMidLineLabel)
+        label.delete(emaMidLineLabel)
+        emaMidLineLabel := na
 
     if na(emaSlowLineLabel)
         emaSlowLineLabel := label.new(bar_index + 1, emaSlow, '', xloc = xloc.bar_index, yloc = yloc.price, style = label.style_label_left, textcolor = color.white, color = emaSlowColor, size = size.small)
         emaSlowLineLabel
     else
         label.set_xy(emaSlowLineLabel, bar_index + 1, emaSlow)
-    label.set_text(emaSlowLineLabel, 'EMA ' + str.tostring(emaSlowLength))
+    label.set_text(emaSlowLineLabel, 'ช้า EMA ' + str.tostring(emaSlowLength))
     label.set_color(emaSlowLineLabel, emaSlowColor)
 
 // --- FLUID TRAD (FIXED SECTION) ---
